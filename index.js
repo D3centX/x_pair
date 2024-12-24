@@ -1,6 +1,5 @@
 const express = require("express");
 const fs = require("fs");
-
 const pino = require("pino");
 const NodeCache = require("node-cache");
 const { Mutex } = require("async-mutex");
@@ -17,7 +16,7 @@ const {
     makeCacheableSignalKeyStore,
     DisconnectReason,
 } = require("@whiskeysockets/baileys");
-const { saveSession, getSession, deleteSession } = require("./mongo");
+
 const app = express();
 const port = 3000;
 let session;
@@ -27,6 +26,7 @@ app.use(express.static(path.join(__dirname, "pages")));
 app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "pages", "dashboard.html"));
 });
+
 async function connector(Num, res) {
     if (fs.existsSync(__dirname + "/session")) {
         fs.emptyDirSync(__dirname + "/session");
@@ -37,12 +37,7 @@ async function connector(Num, res) {
     if (!fs.existsSync(sessionDir)) {
         fs.mkdirSync(sessionDir);
     }
-    const existingSession = await getSession(sessionId);
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
-    if (existingSession) {
-        state.creds = existingSession.creds;
-        state.keys = existingSession.keys;
-    }
     session = makeWASocket({
         auth: {
             creds: state.creds,
@@ -63,18 +58,15 @@ async function connector(Num, res) {
         const code = await session.requestPairingCode(Num);
         if (!res.headersSent) {
             res.send({ code: code?.match(/.{1,4}/g)?.join("-") });
-        }
-    }
+        } }
     session.ev.on("creds.update", async () => {
         await saveCreds();
-        await saveSession(sessionId, state);
     });
     session.ev.on("connection.update", async (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === "open") {
             console.log("Connected successfully");
             await delay(5000);
-
             pastebin
                 .createPasteFromFile(
                     __dirname + "/session/creds.json",
@@ -94,7 +86,6 @@ async function connector(Num, res) {
         } else if (connection === "close") {
             const reason = lastDisconnect?.error?.output?.statusCode;
             console.log(`Connection closed. Reason: ${reason}`);
-            await deleteSession(sessionId);
             reconn(reason);
         }
     });
@@ -135,3 +126,4 @@ app.get("/pair", async (req, res) => {
 app.listen(port, () => {
     console.log(`Running on PORT:${port}`);
 });
+    
