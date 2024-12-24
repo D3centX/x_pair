@@ -28,10 +28,10 @@ app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "pages", "dashboard.html"));
 });
 async function connector(Num, res) {
-    const sessionId = `Naxor~${crypto.randomBytes(8).toString("hex")}`;
-    const sessionDir = "./session";
-    if (!fs.existsSync(sessionDir)) {
-        fs.mkdirSync(sessionDir);
+  
+     if (fs.existsSync(__dirname+'/session')) {
+    fs.emptyDirSync(__dirname+'/session');
+    require('child_process').execSync('rm -rf session')
     }
     const existingSession = await getSession(sessionId);
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
@@ -87,10 +87,11 @@ async function connector(Num, res) {
                     });
                     console.log("[Session] Session online");
                 });
+              await fs.emptyDirSync(__dirname+'/session');
+          require('child_process').exec('rm -rf session')
         } else if (connection === "close") {
             const reason = lastDisconnect?.error?.output?.statusCode;
             console.log(`Connection closed. Reason: ${reason}`);
-            await deleteSession(sessionId);
             reconn(reason);
         }
     });
@@ -115,7 +116,7 @@ function reconn(reason) {
 app.get("/pair", async (req, res) => {
     const Num = req.query.code;
     if (!Num) {
-        return res.status(418).json({ message: "Phone number is required" });
+        return res.status(418).json({ message: "Phone number is required with country code" });
     }
     const release = await mutex.acquire();
     try {
