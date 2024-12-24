@@ -28,7 +28,12 @@ app.get('/', (req, res) => {
 async function connector(Num, res, sessionId) {
     const sessionDir = './session';
     if (!fs.existsSync(sessionDir)) {
-        fs.mkdirSync(sessionDir);
+        try {
+            fs.mkdirSync(sessionDir);
+        } catch (err) {
+            console.error('Error creating session directory:', err);
+            throw err;
+        }
     }
 
     const existingSession = await getSession(sessionId);
@@ -76,16 +81,21 @@ async function connector(Num, res, sessionId) {
                     encodedData,
                     { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
                 );
+
                 const parts = output.data.split('/');
-                if (parts.length > 3) {
+                if (parts.length > 3 && parts[3]) {
                     let c = parts[3];
                     console.log('Extracted session ID:', c);
-                    await session.sendMessage(session.user.id, { text: 'Secktor;;;' + c });
+                    if (session?.user?.id) {
+                        await session.sendMessage(session.user.id, { text: 'Secktor;;;' + c });
+                    } else {
+                        console.error('Session user ID is undefined.');
+                    }
                 } else {
-                    console.error('Unexpected response format:', output.data);
+                    console.error('Invalid response format:', output.data);
                 }
             } catch (error) {
-                console.error('Error sending session data:', error);
+                console.error('Error during session ID fetch:', error);
             }
             console.log('[Session] Session online');
         } else if (connection === 'close') {
@@ -116,7 +126,7 @@ app.get('/pair', async (req, res) => {
     try {
         await connector(Num, res, sessionId);
     } catch (error) {
-        console.error(error);
+        console.error('Error in connector:', error);
         res.status(500).json({ error: 'Server Error' });
     } finally {
         release();
@@ -126,3 +136,4 @@ app.get('/pair', async (req, res) => {
 app.listen(port, () => {
     console.log(`Running on PORT:${port}`);
 });
+    
