@@ -2,9 +2,9 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const pino = require('pino');
-const axios = require('axios');
 const NodeCache = require('node-cache');
 const { Mutex } = require('async-mutex');
+const crypto = require('crypto');
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -14,36 +14,28 @@ const {
     DisconnectReason
 } = require('@whiskeysockets/baileys');
 const { saveSession, getSession, deleteSession } = require('./mongo');
-
 const app = express();
 const port = 3000;
+let session;
 const msgRetryCounterCache = new NodeCache();
 const mutex = new Mutex();
-
 app.use(express.static(path.join(__dirname, 'pages')));
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'pages', 'dashboard.html'));
 });
-
-async function connector(Num, res, sessionId) {
+async function connector(Num, res) {
+    const sessionId = `Naxor~${crypto.randomBytes(8).toString('hex')}`;
     const sessionDir = './session';
     if (!fs.existsSync(sessionDir)) {
-        try {
-            fs.mkdirSync(sessionDir);
-        } catch (err) {
-            console.error('Error creating session directory:', err);
-            throw err;
-        }
+        fs.mkdirSync(sessionDir);
     }
-
     const existingSession = await getSession(sessionId);
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     if (existingSession) {
         state.creds = existingSession.creds;
         state.keys = existingSession.keys;
     }
-
-    const session = makeWASocket({
+    session = makeWASocket({
         auth: {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }).child({ level: 'fatal' }))
@@ -54,80 +46,57 @@ async function connector(Num, res, sessionId) {
         markOnlineOnConnect: true,
         msgRetryCounterCache
     });
-
     if (!session.authState.creds.registered) {
         await delay(1500);
         Num = Num.replace(/[^0-9]/g, '');
         const code = await session.requestPairingCode(Num);
         if (!res.headersSent) {
-            res.send({ code: code?.match(/.{1,4}/g)?.join('-'), sessionId });
+            res.send({ code: code?.match(/.{1,4}/g)?.join('-') });
         }
     }
-
     session.ev.on('creds.update', async () => {
         await saveCreds();
-        await saveSession(sessionId, state);
+        await saveSession(sessionId, state); 
     });
-
     session.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'open') {
             console.log('Connected successfully');
-            const data = JSON.stringify({ sessionId });
-            const encodedData = Buffer.from(data).toString('base64');
-            try {
-                const output = await axios.post(
-                    'http://paste.c-net.org/',
-                    encodedData,
-                    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-                );
-
-                const parts = output.data.split('/');
-                if (parts.length > 3 && parts[3]) {
-                    let c = parts[3];
-                    console.log('Extracted session ID:', c);
-                    if (session?.user?.id) {
-                        await session.sendMessage(session.user.id, { text: 'Secktor;;;' + c });
-                    } else {
-                        console.error('Session user ID is undefined.');
-                    }
-                } else {
-                    console.error('Invalid response format:', output.data);
-                }
-            } catch (error) {
-                console.error('Error during session ID fetch:', error);
-            }
+            await delay(5000);
+            console.log(state.creds)
+            await delay(800)
+          const output = await axios.post('http://paste.c-net.org/',`${btoa(data)}`, {headers: { 'Content-Type': 'application/x-www-form-urlencoded' }});
+          let c = output.data.split('/')[3]
+           await session.sendMessage(session.user.id, {text: 'Secktor;;;'+c});	
             console.log('[Session] Session online');
         } else if (connection === 'close') {
             const reason = lastDisconnect?.error?.output?.statusCode;
             console.log(`Connection closed. Reason: ${reason}`);
-            await deleteSession(sessionId);
-            reconn(reason, sessionId);
+            await deleteSession(sessionId); 
+            reconn(reason);
         }
     });
 }
 
-function reconn(reason, sessionId) {
+function reconn(reason) {
     if ([DisconnectReason.connectionLost, DisconnectReason.connectionClosed, DisconnectReason.restartRequired].includes(reason)) {
         console.log('Connection lost, reconnecting...');
-        connector(null, null, sessionId);
+        connector();
     } else {
         console.log(`Disconnected! Reason: ${reason}`);
-    }
-}
+        session.end();
+    }}
 
 app.get('/pair', async (req, res) => {
     const Num = req.query.code;
-    const sessionId = req.query.sessionId;
-    if (!Num || !sessionId) {
-        return res.status(418).json({ message: 'Phone number and session ID are required' });
-    }
+    if (!Num) {
+    return res.status(418).json({ message: 'Phone number is required' }); }
     const release = await mutex.acquire();
     try {
-        await connector(Num, res, sessionId);
+        await connector(Num, res);
     } catch (error) {
-        console.error('Error in connector:', error);
-        res.status(500).json({ error: 'Server Error' });
+        console.error(error);
+        res.status(500).json({ error: 'server Error' });
     } finally {
         release();
     }
@@ -136,4 +105,3 @@ app.get('/pair', async (req, res) => {
 app.listen(port, () => {
     console.log(`Running on PORT:${port}`);
 });
-    
